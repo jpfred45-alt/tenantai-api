@@ -24,7 +24,26 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
-
+app.get("/api/v1/tenants", (req, res) => {
+  res.status(200).json({
+    tenants: [
+      {
+        tenantId: "tenant_001",
+        name: "Acme Property Group",
+        status: "active",
+        plan: "pro"
+      },
+      {
+        tenantId: "tenant_002",
+        name: "Blue Ridge Rentals",
+        status: "trial",
+        plan: "basic"
+      }
+    ],
+    count: 2,
+    timestamp: new Date().toISOString()
+  });
+});
 /* -------------------------
    API v1
 -------------------------- */
