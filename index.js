@@ -5,6 +5,43 @@ const PORT = Number(process.env.PORT) || 8080;
 
 app.use(express.json());
 // -------------------------
+// API key authentication middleware
+// -------------------------
+const API_KEYS = {
+  "sk_tenant_001_test": {
+    tenantId: "tenant_001",
+    name: "Acme Property Group",
+    plan: "pro"
+  },
+  "sk_tenant_002_test": {
+    tenantId: "tenant_002",
+    name: "Blue Ridge Rentals",
+    plan: "basic"
+  }
+};
+
+function requireApiKey(req, res, next) {
+  const authHeader = req.header("Authorization");
+
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    return res.status(401).json({
+      error: "Missing or invalid Authorization header"
+    });
+  }
+
+  const apiKey = authHeader.replace("Bearer ", "").trim();
+  const tenant = API_KEYS[apiKey];
+
+  if (!tenant) {
+    return res.status(403).json({
+      error: "Invalid API key"
+    });
+  }
+
+  req.tenant = tenant;
+  next();
+}
+/ -------------------------
 // Tenant identification middleware
 // -------------------------
 function requireTenant(req, res, next) {
@@ -48,9 +85,10 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
-app.get("/api/v1/tenants", requireTenant, (req, res) => {
+app.get("/api/v1/tenants", requireApiKey, (req, res) => {
   res.status(200).json({
-requestedBy: req.tenantId,
+requestedBy: req.tenant.tenantId,
+plan: req.tenant.plan,
 tenants: [
       {
         tenantId: "tenant_001",
