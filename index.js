@@ -41,7 +41,7 @@ function requireApiKey(req, res, next) {
   req.tenant = tenant;
   next();
 }
-/ -------------------------
+/* ------------------------- */
 // Tenant identification middleware
 // -------------------------
 function requireTenant(req, res, next) {
