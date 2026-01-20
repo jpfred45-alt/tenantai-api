@@ -1,7 +1,7 @@
 const express = require("express");
 
 const app = express();
-const PORT = Number(process.env.PORT); // ← force Railway’s port
+const PORT = Number(process.env.PORT);
 
 app.use(express.json());
 
