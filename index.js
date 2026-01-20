@@ -3,9 +3,11 @@ const express = require("express");
 const app = express();
 const PORT = Number(process.env.PORT) || 8080;
 
-
 app.use(express.json());
-const apiRouter = express.Router();
+
+/* -------------------------
+   Root & health
+-------------------------- */
 app.get("/", (req, res) => {
   res.status(200).json({
     status: "TenantAI API running",
@@ -13,6 +15,7 @@ app.get("/", (req, res) => {
     time: new Date().toISOString()
   });
 });
+
 app.get("/health", (req, res) => {
   res.status(200).json({
     ok: true,
@@ -21,6 +24,22 @@ app.get("/health", (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+/* -------------------------
+   API v1
+-------------------------- */
+app.get("/api/v1/status", (req, res) => {
+  res.status(200).json({
+    api: "v1",
+    status: "ok",
+    service: "tenantai-api",
+    timestamp: new Date().toISOString()
+  });
+});
+
+/* -------------------------
+   Start server
+-------------------------- */
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`TenantAI API listening on port ${PORT}`);
 });
