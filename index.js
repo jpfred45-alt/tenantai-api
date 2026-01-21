@@ -22,44 +22,39 @@ const API_KEYS = {
 };
 
 /* =========================
-   RATE LIMITING CONFIG
+   RATE LIMIT CONFIG
 ========================= */
 const RATE_LIMITS = {
-  basic: { limit: 20, windowMs: 60_000 },
-  pro: { limit: 100, windowMs: 60_000 }
+  basic: { limit: 20, windowMs: 60000 },
+  pro: { limit: 100, windowMs: 60000 }
 };
 
 const requestCounts = {};
 
 /* =========================
-   API KEY MIDDLEWARE
+   API KEY + RATE LIMIT MIDDLEWARE
 ========================= */
 function requireApiKey(req, res, next) {
   const authHeader = req.header("Authorization");
 
-  // Validate Authorization header
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({
       error: "Missing or invalid Authorization header"
     });
   }
 
-  // Extract API key
   const apiKey = authHeader.replace("Bearer ", "").trim();
   const tenant = API_KEYS[apiKey];
 
-  // Validate API key
   if (!tenant) {
     return res.status(403).json({
       error: "Invalid API key"
     });
   }
 
-  // Rate limiting per tenant
   const now = Date.now();
   const tenantId = tenant.tenantId;
-  const plan = tenant.plan;
-  const { limit, windowMs } = RATE_LIMITS[plan];
+  const { limit, windowMs } = RATE_LIMITS[tenant.plan];
 
   if (!requestCounts[tenantId]) {
     requestCounts[tenantId] = { count: 1, start: now };
@@ -76,19 +71,18 @@ function requireApiKey(req, res, next) {
   if (requestCounts[tenantId].count > limit) {
     return res.status(429).json({
       error: "Rate limit exceeded",
-      plan,
+      plan: tenant.plan,
       limit,
       windowMs
     });
   }
 
-  // Attach tenant context
   req.tenant = tenant;
   next();
 }
 
 /* =========================
-   ROUTES
+   ROOT & HEALTH
 ========================= */
 app.get("/", (req, res) => {
   res.json({
@@ -101,14 +95,19 @@ app.get("/health", (req, res) => {
   res.json({
     ok: true,
     service: "tenantai-api",
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
   });
 });
 
+/* =========================
+   API v1
+========================= */
 app.get("/api/v1/status", (req, res) => {
   res.json({
     api: "v1",
-    status: "ok"
+    status: "ok",
+    timestamp: new Date().toISOString()
   });
 });
 
