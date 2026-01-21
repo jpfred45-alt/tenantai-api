@@ -136,7 +136,3 @@ app.get("/api/v1/tenants", requireApiKey, (req, res) => {
 
 /* =========================
    START SERVER
-========================= */
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`TenantAI API listening on port ${PORT}`);
-});
