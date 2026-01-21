@@ -4,9 +4,10 @@ const app = express();
 const PORT = Number(process.env.PORT) || 8080;
 
 app.use(express.json());
-// -------------------------
-// API key authentication middleware
-// -------------------------
+
+/* =========================
+   API KEYS (mock)
+========================= */
 const API_KEYS = {
   "sk_tenant_001_test": {
     tenantId: "tenant_001",
@@ -19,38 +20,42 @@ const API_KEYS = {
     plan: "basic"
   }
 };
-// -------------------------
-// Rate limiting config
-// -------------------------
+
+/* =========================
+   RATE LIMITING CONFIG
+========================= */
 const RATE_LIMITS = {
-  basic: { limit: 20, windowMs: 60000 },
-  pro: { limit: 100, windowMs: 60000 }
+  basic: { limit: 20, windowMs: 60_000 },
+  pro: { limit: 100, windowMs: 60_000 }
 };
 
 const requestCounts = {};
 
-  function requireApiKey(req, res, next) {
+/* =========================
+   API KEY MIDDLEWARE
+========================= */
+function requireApiKey(req, res, next) {
   const authHeader = req.header("Authorization");
 
-  // 1. Validate Authorization header
+  // Validate Authorization header
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({
       error: "Missing or invalid Authorization header"
     });
   }
 
-  // 2. Extract API key
+  // Extract API key
   const apiKey = authHeader.replace("Bearer ", "").trim();
   const tenant = API_KEYS[apiKey];
 
-  // 3. Validate API key
+  // Validate API key
   if (!tenant) {
     return res.status(403).json({
       error: "Invalid API key"
     });
   }
 
-  // 4. Rate limiting per tenant
+  // Rate limiting per tenant
   const now = Date.now();
   const tenantId = tenant.tenantId;
   const plan = tenant.plan;
@@ -76,63 +81,42 @@ const requestCounts = {};
       windowMs
     });
   }
-// Attach tenant context
-req.tenant = tenant;
-next();
-  // 5. Attach tenant context
+
+  // Attach tenant context
   req.tenant = tenant;
   next();
 }
 
-  req.tenant = tenant;
-  next();
-
-
-  const tenantId = req.header("X-Tenant-ID");
-
-  if (!tenantId) {
-    return res.status(400).json({
-      error: "Missing X-Tenant-ID header"
-    });
-  }
-
-  // Mock tenant validation for now
-  const allowedTenants = ["tenant_001", "tenant_002"];
-
-  if (!allowedTenants.includes(tenantId)) {
-    return res.status(403).json({
-      error: "Invalid tenant"
-    });
-  }
-
-  // Attach tenant to request for later use
-  req.tenantId = tenantId;
-  next();
-}
-/* -------------------------
-   Root & health
--------------------------- */
+/* =========================
+   ROUTES
+========================= */
 app.get("/", (req, res) => {
-  res.status(200).json({
+  res.json({
     status: "TenantAI API running",
-    port: PORT,
     time: new Date().toISOString()
   });
 });
 
 app.get("/health", (req, res) => {
-  res.status(200).json({
+  res.json({
     ok: true,
     service: "tenantai-api",
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString()
+    uptime: process.uptime()
   });
 });
+
+app.get("/api/v1/status", (req, res) => {
+  res.json({
+    api: "v1",
+    status: "ok"
+  });
+});
+
 app.get("/api/v1/tenants", requireApiKey, (req, res) => {
-  res.status(200).json({
-requestedBy: req.tenant.tenantId,
-plan: req.tenant.plan,
-tenants: [
+  res.json({
+    requestedBy: req.tenant.tenantId,
+    plan: req.tenant.plan,
+    tenants: [
       {
         tenantId: "tenant_001",
         name: "Acme Property Group",
@@ -150,17 +134,10 @@ tenants: [
     timestamp: new Date().toISOString()
   });
 });
-/* -------------------------
-   API v1
--------------------------- */
-app.get("/api/v1/status", (req, res) => {
-  res.status(200).json({
-    api: "v1",
-    status: "ok",
-    service: "tenantai-api",
-    timestamp: new Date().toISOString()
-  });
-});
 
-/* -------------------------
-   Start server
+/* =========================
+   START SERVER
+========================= */
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`TenantAI API listening on port ${PORT}`);
+});
