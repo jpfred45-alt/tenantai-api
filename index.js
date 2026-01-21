@@ -19,32 +19,75 @@ const API_KEYS = {
     plan: "basic"
   }
 };
+// -------------------------
+// Rate limiting config
+// -------------------------
+const RATE_LIMITS = {
+  basic: { limit: 20, windowMs: 60000 },
+  pro: { limit: 100, windowMs: 60000 }
+};
 
-function requireApiKey(req, res, next) {
+const requestCounts = {};
+
+  function requireApiKey(req, res, next) {
   const authHeader = req.header("Authorization");
 
+  // 1. Validate Authorization header
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return res.status(401).json({
       error: "Missing or invalid Authorization header"
     });
   }
 
+  // 2. Extract API key
   const apiKey = authHeader.replace("Bearer ", "").trim();
   const tenant = API_KEYS[apiKey];
 
+  // 3. Validate API key
   if (!tenant) {
     return res.status(403).json({
       error: "Invalid API key"
     });
   }
 
+  // 4. Rate limiting per tenant
+  const now = Date.now();
+  const tenantId = tenant.tenantId;
+  const plan = tenant.plan;
+  const { limit, windowMs } = RATE_LIMITS[plan];
+
+  if (!requestCounts[tenantId]) {
+    requestCounts[tenantId] = { count: 1, start: now };
+  } else {
+    const elapsed = now - requestCounts[tenantId].start;
+
+    if (elapsed > windowMs) {
+      requestCounts[tenantId] = { count: 1, start: now };
+    } else {
+      requestCounts[tenantId].count += 1;
+    }
+  }
+
+  if (requestCounts[tenantId].count > limit) {
+    return res.status(429).json({
+      error: "Rate limit exceeded",
+      plan,
+      limit,
+      windowMs
+    });
+  }
+// Attach tenant context
+req.tenant = tenant;
+next();
+  // 5. Attach tenant context
   req.tenant = tenant;
   next();
 }
-/* ------------------------- */
-// Tenant identification middleware
-// -------------------------
-function requireTenant(req, res, next) {
+
+  req.tenant = tenant;
+  next();
+}
+
   const tenantId = req.header("X-Tenant-ID");
 
   if (!tenantId) {
@@ -121,7 +164,3 @@ app.get("/api/v1/status", (req, res) => {
 
 /* -------------------------
    Start server
--------------------------- */
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`TenantAI API listening on port ${PORT}`);
-});
