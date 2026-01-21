@@ -86,7 +86,7 @@ next();
 
   req.tenant = tenant;
   next();
-}
+
 
   const tenantId = req.header("X-Tenant-ID");
 
