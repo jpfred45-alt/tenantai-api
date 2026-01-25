@@ -8,6 +8,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT) || 8080;
 
+/* =========================
+   MIDDLEWARE
+========================= */
 app.use(express.json());
 app.use("/admin", express.static(path.join(__dirname, "admin")));
 
@@ -63,7 +66,7 @@ function requireApiKey(req, res, next) {
 }
 
 /* =========================
-   POLICY
+   POLICY ENGINE
 ========================= */
 const POLICY = {
   notify_tenant: { allowed: true, requiresApproval: false },
@@ -74,7 +77,7 @@ const POLICY = {
 };
 
 /* =========================
-   APPROVAL STORE
+   APPROVAL STORE (IN MEMORY)
 ========================= */
 const approvals = {};
 
@@ -84,31 +87,42 @@ const approvals = {};
 function classifyIntent(command) {
   const text = command.toLowerCase();
 
-  if (text.includes("notify")) return "notify_tenant";
+  if (text.includes("late rent") || text.includes("notify")) return "notify_tenant";
   if (text.includes("letter")) return "generate_letter";
   if (text.includes("evict")) return "initiate_eviction";
-  if (text.includes("financial")) return "access_financials";
+  if (text.includes("financial") || text.includes("bank")) return "access_financials";
   if (text.includes("delete")) return "delete_records";
 
   return "unknown";
 }
 
 /* =========================
-   ACTION EXECUTOR
+   EXECUTION ENGINE
 ========================= */
-function executeAction(intent, tenant) {
-  return {
-    success: true,
-    intent,
-    tenant: tenant.tenantId
-  };
+function executeAction(intent, context, tenant) {
+  switch (intent) {
+    case "notify_tenant":
+      return { success: true, message: `Tenant ${tenant.name} notified` };
+
+    case "generate_letter":
+      return { success: true, message: "Letter generated" };
+
+    case "initiate_eviction":
+      return { success: true, message: "Eviction process initiated" };
+
+    case "access_financials":
+      return { success: true, message: "Financials accessed" };
+
+    default:
+      return { success: false, error: "Unsupported action" };
+  }
 }
 
 /* =========================
    COMMAND ENDPOINT
 ========================= */
 app.post("/command", requireApiKey, (req, res) => {
-  const { command } = req.body;
+  const { command, context } = req.body;
 
   if (!command) {
     return res.status(400).json({ error: "Command is required" });
@@ -131,18 +145,25 @@ app.post("/command", requireApiKey, (req, res) => {
     approvals[approvalId] = {
       intent,
       tenant: req.tenant,
+      context: context || {},
       createdAt: new Date().toISOString()
     };
 
     return res.json({
       pendingApproval: true,
       approvalId,
-      intent
+      intent,
+      nextStep: "await_human_approval"
     });
   }
 
-  const result = executeAction(intent, req.tenant);
-  res.json(result);
+  const result = executeAction(intent, context || {}, req.tenant);
+
+  return res.json({
+    approved: true,
+    intent,
+    result
+  });
 });
 
 /* =========================
@@ -155,17 +176,27 @@ app.get("/approvals", requireApiKey, (req, res) => {
 /* =========================
    APPROVE ACTION
 ========================= */
-app.post("/approve/:id", requireApiKey, (req, res) => {
-  const approval = approvals[req.params.id];
+app.post("/approve/:approvalId", requireApiKey, (req, res) => {
+  const { approvalId } = req.params;
+  const approval = approvals[approvalId];
 
   if (!approval) {
     return res.status(404).json({ error: "Approval not found" });
   }
 
-  const result = executeAction(approval.intent, approval.tenant);
-  delete approvals[req.params.id];
+  const result = executeAction(
+    approval.intent,
+    approval.context,
+    approval.tenant
+  );
 
-  res.json({ approved: true, result });
+  delete approvals[approvalId];
+
+  res.json({
+    approved: true,
+    approvalId,
+    result
+  });
 });
 
 /* =========================
