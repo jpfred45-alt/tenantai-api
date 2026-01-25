@@ -19,9 +19,8 @@ app.get("/health", (req, res) => {
 });
 
 /* =========================
-   API KEYS (MOCK – REPLACE LATER)
+   API KEYS (MOCK)
 ========================= */
-
 const API_KEYS = {
   "sk_tenant_001_test": {
     tenantId: "tenant_001",
@@ -36,7 +35,7 @@ const API_KEYS = {
 };
 
 /* =========================
-   AUTH MIDDLEWARE (HARD GATE)
+   AUTH MIDDLEWARE
 ========================= */
 function requireApiKey(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -57,108 +56,60 @@ function requireApiKey(req, res, next) {
 }
 
 /* =========================
-   POLICY ENGINE (SOURCE OF TRUTH)
+   POLICY ENGINE
 ========================= */
-/* =========================
-   APPROVAL STORE (v1 - in memory)
-========================= */
-const approvals = {};
 const POLICY = {
-  notify_tenant: {
-    allowed: true,
-    requiresApproval: false
-  },
-  generate_letter: {
-    allowed: true,
-    requiresApproval: false
-  },
-  initiate_eviction: {
-    allowed: true,
-    requiresApproval: true
-  },
-  access_financials: {
-    allowed: true,
-    requiresApproval: true
-  },
-  delete_records: {
-    allowed: false
-  }
+  notify_tenant: { allowed: true, requiresApproval: false },
+  generate_letter: { allowed: true, requiresApproval: false },
+  initiate_eviction: { allowed: true, requiresApproval: true },
+  access_financials: { allowed: true, requiresApproval: true },
+  delete_records: { allowed: false }
 };
 
 /* =========================
-   INTENT CLASSIFIER (v1)
+   APPROVAL STORE (IN MEMORY)
+========================= */
+const approvals = {};
+
+/* =========================
+   INTENT CLASSIFIER
 ========================= */
 function classifyIntent(command) {
   const text = command.toLowerCase();
 
-  if (text.includes("late rent") || text.includes("notify")) {
-    return "notify_tenant";
-  }
-
-  if (text.includes("letter")) {
-    return "generate_letter";
-  }
-
-  if (text.includes("evict")) {
-    return "initiate_eviction";
-  }
-
-  if (text.includes("financial") || text.includes("bank")) {
-    return "access_financials";
-  }
-
-  if (text.includes("delete")) {
-    return "delete_records";
-  }
+  if (text.includes("late rent") || text.includes("notify")) return "notify_tenant";
+  if (text.includes("letter")) return "generate_letter";
+  if (text.includes("evict")) return "initiate_eviction";
+  if (text.includes("financial") || text.includes("bank")) return "access_financials";
+  if (text.includes("delete")) return "delete_records";
 
   return "unknown";
 }
-function requiresApproval(intent) {
-  return POLICY[intent]?.requiresApproval === true;
-}
+
 /* =========================
-   EXECUTION ENGINE (v1)
+   EXECUTION ENGINE
 ========================= */
 function executeAction(intent, context, tenant) {
   switch (intent) {
-
     case "notify_tenant":
-      return {
-        success: true,
-        action: intent,
-message: `Tenant ${tenant.name} notified`
-      };
+      return { success: true, message: `Tenant ${tenant.name} notified` };
 
     case "generate_letter":
-      return {
-        success: true,
-        action: intent,
-        message: "Letter generated"
-      };
+      return { success: true, message: "Letter generated" };
 
     case "initiate_eviction":
-      return {
-        success: true,
-        action: intent,
-        message: "Eviction process initiated"
-      };
+      return { success: true, message: "Eviction process initiated" };
 
     case "access_financials":
-      return {
-        success: true,
-        action: intent,
-        message: "Financials accessed"
-      };
+      return { success: true, message: "Financials accessed" };
 
     default:
-      return {
-        success: false,
-        error: "Unknown or unsupported action"
-      };
+      return { success: false, error: "Unsupported action" };
   }
 }
+
 /* =========================
-   COMMAND GATEWAY
+   COMMAND ENDPOINT
 ========================= */
 app.post("/command", requireApiKey, (req, res) => {
   const { command, context } = req.body;
@@ -177,55 +128,47 @@ app.post("/command", requireApiKey, (req, res) => {
       reason: "Action not permitted by policy"
     });
   }
-if (!policy || policy.allowed === false) {
-  return res.status(403).json({
-    status: "blocked",
-    intent,
-    reason: "Action not permitted by policy"
-  });
-}
-if (policy.requiresApproval) {
-  const approvalId = Date.now().toString();
 
-  approvals[approvalId] = {
-    intent,
-    tenant: req.tenant,
-    context: context || {}
-  };
+  if (policy.requiresApproval) {
+    const approvalId = Date.now().toString();
+
+    approvals[approvalId] = {
+      intent,
+      tenant: req.tenant,
+      context: context || {},
+      createdAt: new Date().toISOString()
+    };
+
+    return res.json({
+      pendingApproval: true,
+      approvalId,
+      intent,
+      nextStep: "await_human_approval"
+    });
+  }
 
   return res.json({
-    pendingApproval: true,
-    approvalId,
-    intent,
-    nextStep: "await_human_approval"
-  });
-}
-return res.json({
-  received: true,
-  tenant: req.tenant.tenantId,
-  intent,
-  context: context || {},
-  requiresApproval: false,
-  status: "approved",
-  nextStep: "ready_for_execution"
-});
-
-   res.json({
     received: true,
     tenant: req.tenant.tenantId,
     intent,
     context: context || {},
-    
+    status: "approved",
+    nextStep: "ready_for_execution"
   });
 });
 
+/* =========================
+   LIST APPROVALS (DASHBOARD)
+========================= */
+app.get("/approvals", requireApiKey, (req, res) => {
+  res.json({ approvals });
+});
 
-/// ========================
-// APPROVAL ENDPOINT
-// ========================
+/* =========================
+   APPROVAL ENDPOINT
+========================= */
 app.post("/approve/:approvalId", requireApiKey, (req, res) => {
   const { approvalId } = req.params;
-
   const approval = approvals[approvalId];
 
   if (!approval) {
@@ -247,7 +190,9 @@ app.post("/approve/:approvalId", requireApiKey, (req, res) => {
   });
 });
 
-
+/* =========================
+   SERVER START
+========================= */
 app.listen(PORT, () => {
   console.log(`TenantAI API listening on port ${PORT}`);
 });
