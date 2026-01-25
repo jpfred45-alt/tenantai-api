@@ -7,7 +7,7 @@ const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = Number(process.env.PORT) || 8080;
+const PORT = process.env.PORT || 8080;
 
 /* =========================
    MIDDLEWARE
@@ -37,11 +37,6 @@ const API_KEYS = {
     tenantId: "tenant_001",
     name: "Acme Property Group",
     plan: "pro"
-  },
-  "sk_tenant_002_test": {
-    tenantId: "tenant_002",
-    name: "Blue Ridge Rentals",
-    plan: "basic"
   }
 };
 
@@ -52,4 +47,41 @@ function requireApiKey(req, res, next) {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(40
+    return res.status(401).json({ error: "Missing or invalid API key" });
+  }
+
+  const apiKey = authHeader.replace("Bearer ", "");
+  const tenant = API_KEYS[apiKey];
+
+  if (!tenant) {
+    return res.status(403).json({ error: "Unauthorized API key" });
+  }
+
+  req.tenant = tenant;
+  next();
+}
+
+/* =========================
+   POLICY
+========================= */
+const POLICY = {
+  notify_tenant: true,
+  generate_letter: true,
+  initiate_eviction: false,
+  delete_records: false
+};
+
+/* =========================
+   COMMAND ROUTE
+========================= */
+app.post("/command", requireApiKey, (req, res) => {
+  const { command } = req.body;
+
+  if (!command) {
+    return res.status(400).json({ error: "Command is required" });
+  }
+
+  const text = command.toLowerCase();
+
+  let intent = "unknown";
+  if (text.includes("notify")) intent = "notify_tenan_
