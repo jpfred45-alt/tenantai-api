@@ -263,9 +263,9 @@ app.post("/approve/:approvalId", requireApiKey, (req, res) => {
     result
   });
 });
-// ====================
-// SERVER START
-// ====================
+/* ====================
+   SERVER START
+==================== */
 app.listen(PORT, () => {
   console.log(`TenantAI API listening on port ${PORT}`);
 });
