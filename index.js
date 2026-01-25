@@ -219,7 +219,6 @@ return res.json({
   });
 });
 
-  });
 
 /// ========================
 // APPROVAL ENDPOINT
