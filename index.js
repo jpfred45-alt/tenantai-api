@@ -112,6 +112,9 @@ function classifyIntent(command) {
 
   return "unknown";
 }
+function requiresApproval(intent) {
+  return POLICY[intent]?.requiresApproval === true;
+}
 /* =========================
    EXECUTION ENGINE (v1)
 ========================= */
@@ -173,8 +176,40 @@ app.post("/command", requireApiKey, (req, res) => {
       reason: "Action not permitted by policy"
     });
   }
+if (!policy || policy.allowed === false) {
+  return res.status(403).json({
+    status: "blocked",
+    intent,
+    reason: "Action not permitted by policy"
+  });
+}
+if (policy.requiresApproval) {
+  const approvalId = Date.now().toString();
 
-  res.json({
+  approvals[approvalId] = {
+    intent,
+    tenant: req.tenant,
+    context: context || {}
+  };
+
+  return res.json({
+    pendingApproval: true,
+    approvalId,
+    intent,
+    nextStep: "await_human_approval"
+  });
+}
+return res.json({
+  received: true,
+  tenant: req.tenant.tenantId,
+  intent,
+  context: context || {},
+  requiresApproval: false,
+  status: "approved",
+  nextStep: "ready_for_execution"
+});
+
+   res.json({
     received: true,
     tenant: req.tenant.tenantId,
     intent,
@@ -186,8 +221,49 @@ app.post("/command", requireApiKey, (req, res) => {
       : "ready_for_execution"
   });
 });
+if (policy.requiresApproval) {
+  const approvalId = Date.now().toString();
 
-/* =========================
+  approvals[approvalId] = {
+    intent,
+    tenant: req.tenant,
+    context: context || {}
+  };
+
+  return res.json({
+    pendingApproval: true,
+    approvalId,
+    intent,
+    nextStep: "await_human_approval"
+  });
+}
+/// ========================
+// APPROVAL ENDPOINT
+// ========================
+app.post("/approve/:approvalId", requireApiKey, (req, res) => {
+  const { approvalId } = req.params;
+
+  const approval = approvals[approvalId];
+
+  if (!approval) {
+    return res.status(404).json({ error: "Approval not found" });
+  }
+
+  const result = executeAction(
+    approval.intent,
+    approval.context,
+    approval.tenant
+  );
+
+  delete approvals[approvalId];
+
+  res.json({
+    approved: true,
+    approvalId,
+    result
+  });
+});
+ =========================
    SERVER START
 ========================= */
 app.listen(PORT, () => {
