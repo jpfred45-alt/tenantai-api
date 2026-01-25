@@ -149,4 +149,28 @@ app.post("/command", requireApiKey, (req, res) => {
    LIST APPROVALS
 ========================= */
 app.get("/approvals", requireApiKey, (req, res) => {
-  res.json(
+  res.json({ approvals });
+});
+
+/* =========================
+   APPROVE ACTION
+========================= */
+app.post("/approve/:id", requireApiKey, (req, res) => {
+  const approval = approvals[req.params.id];
+
+  if (!approval) {
+    return res.status(404).json({ error: "Approval not found" });
+  }
+
+  const result = executeAction(approval.intent, approval.tenant);
+  delete approvals[req.params.id];
+
+  res.json({ approved: true, result });
+});
+
+/* =========================
+   SERVER START
+========================= */
+app.listen(PORT, () => {
+  console.log(`TenantAI API listening on port ${PORT}`);
+});
