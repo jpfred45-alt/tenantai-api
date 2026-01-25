@@ -1,14 +1,25 @@
 const express = require("express");
-
 const app = express();
 const PORT = Number(process.env.PORT) || 8080;
 
 app.use(express.json());
-app.get("/health", (req, res) => {
-  res.status(200).json({ status: "ok" });
-});
+
 /* =========================
-   API KEYS (mock)
+   HEALTH CHECK
+========================= */
+app.get("/", (req, res) => {
+  res.json({
+    status: "TenantAI API running",
+    time: new Date().toISOString()
+  });
+});
+
+app.get("/health", (req, res) => {
+  res.status(200).json({ ok: true });
+});
+
+/* =========================
+   API KEYS (MOCK – REPLACE LATER)
 ========================= */
 const API_KEYS = {
   "sk_tenant_001_test": {
@@ -24,59 +35,20 @@ const API_KEYS = {
 };
 
 /* =========================
-   RATE LIMIT CONFIG
-========================= */
-const RATE_LIMITS = {
-  basic: { limit: 20, windowMs: 60000 },
-  pro: { limit: 100, windowMs: 60000 }
-};
-
-const requestCounts = {};
-
-/* =========================
-   API KEY + RATE LIMIT MIDDLEWARE
+   AUTH MIDDLEWARE (HARD GATE)
 ========================= */
 function requireApiKey(req, res, next) {
-  const authHeader = req.header("Authorization");
+  const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    return res.status(401).json({
-      error: "Missing or invalid Authorization header"
-    });
+    return res.status(401).json({ error: "Missing or invalid API key" });
   }
 
   const apiKey = authHeader.replace("Bearer ", "").trim();
   const tenant = API_KEYS[apiKey];
 
   if (!tenant) {
-    return res.status(403).json({
-      error: "Invalid API key"
-    });
-  }
-
-  const now = Date.now();
-  const tenantId = tenant.tenantId;
-  const { limit, windowMs } = RATE_LIMITS[tenant.plan];
-
-  if (!requestCounts[tenantId]) {
-    requestCounts[tenantId] = { count: 1, start: now };
-  } else {
-    const elapsed = now - requestCounts[tenantId].start;
-
-    if (elapsed > windowMs) {
-      requestCounts[tenantId] = { count: 1, start: now };
-    } else {
-      requestCounts[tenantId].count += 1;
-    }
-  }
-
-  if (requestCounts[tenantId].count > limit) {
-    return res.status(429).json({
-      error: "Rate limit exceeded",
-      plan: tenant.plan,
-      limit,
-      windowMs
-    });
+    return res.status(403).json({ error: "Unauthorized API key" });
   }
 
   req.tenant = tenant;
@@ -84,60 +56,140 @@ function requireApiKey(req, res, next) {
 }
 
 /* =========================
-   ROOT & HEALTH
+   POLICY ENGINE (SOURCE OF TRUTH)
 ========================= */
-app.get("/", (req, res) => {
-  res.json({
-    status: "TenantAI API running",
-    time: new Date().toISOString()
-  });
-});
+/* =========================
+   APPROVAL STORE (v1 - in memory)
+========================= */
+const approvals = {};
+const POLICY = {
+  notify_tenant: {
+    allowed: true,
+    requiresApproval: false
+  },
+  generate_letter: {
+    allowed: true,
+    requiresApproval: false
+  },
+  initiate_eviction: {
+    allowed: true,
+    requiresApproval: true
+  },
+  access_financials: {
+    allowed: true,
+    requiresApproval: true
+  },
+  delete_records: {
+    allowed: false
+  }
+};
 
-app.get("/health", (req, res) => {
+/* =========================
+   INTENT CLASSIFIER (v1)
+========================= */
+function classifyIntent(command) {
+  const text = command.toLowerCase();
+
+  if (text.includes("late rent") || text.includes("notify")) {
+    return "notify_tenant";
+  }
+
+  if (text.includes("letter")) {
+    return "generate_letter";
+  }
+
+  if (text.includes("evict")) {
+    return "initiate_eviction";
+  }
+
+  if (text.includes("financial") || text.includes("bank")) {
+    return "access_financials";
+  }
+
+  if (text.includes("delete")) {
+    return "delete_records";
+  }
+
+  return "unknown";
+}
+/* =========================
+   EXECUTION ENGINE (v1)
+========================= */
+function executeAction(intent, context, tenant) {
+  switch (intent) {
+
+    case "notify_tenant":
+      return {
+        success: true,
+        action: intent,
+message: `Tenant ${tenant.name} notified`
+      };
+
+    case "generate_letter":
+      return {
+        success: true,
+        action: intent,
+        message: "Letter generated"
+      };
+
+    case "initiate_eviction":
+      return {
+        success: true,
+        action: intent,
+        message: "Eviction process initiated"
+      };
+
+    case "access_financials":
+      return {
+        success: true,
+        action: intent,
+        message: "Financials accessed"
+      };
+
+    default:
+      return {
+        success: false,
+        error: "Unknown or unsupported action"
+      };
+  }
+}
+/* =========================
+   COMMAND GATEWAY
+========================= */
+app.post("/command", requireApiKey, (req, res) => {
+  const { command, context } = req.body;
+
+  if (!command) {
+    return res.status(400).json({ error: "Command is required" });
+  }
+
+  const intent = classifyIntent(command);
+  const policy = POLICY[intent];
+
+  if (!policy || policy.allowed === false) {
+    return res.status(403).json({
+      status: "blocked",
+      intent,
+      reason: "Action not permitted by policy"
+    });
+  }
+
   res.json({
-    ok: true,
-    service: "tenantai-api",
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString()
+    received: true,
+    tenant: req.tenant.tenantId,
+    intent,
+    context: context || {},
+    requiresApproval: policy.requiresApproval || false,
+    status: policy.requiresApproval ? "pending_approval" : "approved",
+    nextStep: policy.requiresApproval
+      ? "await_human_approval"
+      : "ready_for_execution"
   });
 });
 
 /* =========================
-   API v1
+   SERVER START
 ========================= */
-app.get("/api/v1/status", (req, res) => {
-  res.json({
-    api: "v1",
-    status: "ok",
-    timestamp: new Date().toISOString()
-  });
-});
-
-app.get("/api/v1/tenants", requireApiKey, (req, res) => {
-  res.json({
-    requestedBy: req.tenant.tenantId,
-    plan: req.tenant.plan,
-    tenants: [
-      {
-        tenantId: "tenant_001",
-        name: "Acme Property Group",
-        status: "active",
-        plan: "pro"
-      },
-      {
-        tenantId: "tenant_002",
-        name: "Blue Ridge Rentals",
-        status: "trial",
-        plan: "basic"
-      }
-    ],
-    count: 2,
-    timestamp: new Date().toISOString()
-  });
-});
-
-// =========================
-// START SERVER
-app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, () => {
   console.log(`TenantAI API listening on port ${PORT}`);
 });
