@@ -215,27 +215,10 @@ return res.json({
     tenant: req.tenant.tenantId,
     intent,
     context: context || {},
-    requiresApproval: policy.requiresApproval || false,
-    status: policy.requiresApproval ? "pending_approval" : "approved",
-    nextStep: policy.requiresApproval
-      ? "await_human_approval"
-      : "ready_for_execution"
+    
   });
 });
-if (policy.requiresApproval) {
-  const approvalId = Date.now().toString();
 
-  approvals[approvalId] = {
-    intent,
-    tenant: req.tenant,
-    context: context || {}
-  };
-
-  return res.json({
-    pendingApproval: true,
-    approvalId,
-    intent,
-    nextStep: "await_human_approval"
   });
 }
 /// ========================
