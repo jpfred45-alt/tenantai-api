@@ -1,6 +1,8 @@
+
 import path from "path";
 import { fileURLToPath } from "url";
 import express from "express";
+
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -8,8 +10,9 @@ const PORT = Number(process.env.PORT) || 8080;
 
 app.use(express.json());
 app.use("/admin", express.static(path.join(__dirname, "admin")));
+
 /* =========================
-   HEALTH CHECK
+   HEALTH
 ========================= */
 app.get("/", (req, res) => {
   res.json({
@@ -39,7 +42,7 @@ const API_KEYS = {
 };
 
 /* =========================
-   AUTH MIDDLEWARE
+   AUTH
 ========================= */
 function requireApiKey(req, res, next) {
   const authHeader = req.headers.authorization;
@@ -67,11 +70,11 @@ const POLICY = {
   generate_letter: { allowed: true, requiresApproval: false },
   initiate_eviction: { allowed: true, requiresApproval: true },
   access_financials: { allowed: true, requiresApproval: true },
-  delete_records: { allowed: false }
+  delete_records: { allowed: true, requiresApproval: true }
 };
 
 /* =========================
-   APPROVAL STORE (IN MEMORY)
+   APPROVAL STORE
 ========================= */
 const approvals = {};
 
@@ -81,7 +84,7 @@ const approvals = {};
 function classifyIntent(command) {
   const text = command.toLowerCase();
 
-  if (text.includes("late rent") || text.includes("notify")) return "notify_tenant";
+  if (text.includes("notify") || text.includes("late rent")) return "notify_tenant";
   if (text.includes("letter")) return "generate_letter";
   if (text.includes("evict")) return "initiate_eviction";
   if (text.includes("financial") || text.includes("bank")) return "access_financials";
@@ -97,23 +100,21 @@ function executeAction(intent, context, tenant) {
   switch (intent) {
     case "notify_tenant":
       return { success: true, message: `Tenant ${tenant.name} notified` };
-
     case "generate_letter":
       return { success: true, message: "Letter generated" };
-
     case "initiate_eviction":
       return { success: true, message: "Eviction process initiated" };
-
     case "access_financials":
       return { success: true, message: "Financials accessed" };
-
+    case "delete_records":
+      return { success: true, message: "Records deleted" };
     default:
       return { success: false, error: "Unsupported action" };
   }
 }
 
 /* =========================
-   COMMAND ENDPOINT
+   COMMAND
 ========================= */
 app.post("/command", requireApiKey, (req, res) => {
   const { command, context } = req.body;
@@ -125,11 +126,11 @@ app.post("/command", requireApiKey, (req, res) => {
   const intent = classifyIntent(command);
   const policy = POLICY[intent];
 
-  if (!policy || policy.allowed === false) {
+  if (!policy) {
     return res.status(403).json({
       status: "blocked",
       intent,
-      reason: "Action not permitted by policy"
+      reason: "Unknown action"
     });
   }
 
@@ -144,73 +145,23 @@ app.post("/command", requireApiKey, (req, res) => {
     };
 
     return res.json({
-      pendingApproval: true,
+      status: "approval_required",
       approvalId,
       intent,
       nextStep: "await_human_approval"
     });
   }
 
+  const result = executeAction(intent, context || {}, req.tenant);
+
   return res.json({
-    received: true,
-    tenant: req.tenant.tenantId,
+    status: "executed",
     intent,
-    context: context || {},
-    status: "approved",
-    nextStep: "ready_for_execution"
-  });
-});
-
-/* =========================
-   LIST APPROVALS (DASHBOARD)
-========================= */
-app.get("/approvals", requireApiKey, (req, res) => {
-  res.json({ approvals });
-});
-
-/* =========================
-   APPROVAL ENDPOINT
-========================= */
-app.post("/approve/:approvalId", requireApiKey, (req, res) => {
-  const { approvalId } = req.params;
-  const approval = approvals[approvalId];
-
-  if (!approval) {
-    return res.status(404).json({ error: "Approval not found" });
-  }
-
-  const result = executeAction(
-    approval.intent,
-    approval.context,
-    approval.tenant
-  );
-
-  delete approvals[approvalId];
-
-  res.json({
-    approved: true,
-    approvalId,
     result
   });
 });
+
 /* =========================
-   COMMAND EXECUTION
+   LIST APPROVALS
 ========================= */
-
-app.post("/command", requireApiKey, (req, res) => {
-  const { command } = req.body;
-
-  if (!command) {
-    return res.status(400).json({ error: "Command is required" });
-  }
-
-  const result = evaluateCommand(command);
-
-  res.json(result);
-});
-/* =========================
-   SERVER START
-========================= */
-app.listen(PORT, () => {
-  console.log(`TenantAI API listening on port ${PORT}`);
-});
+app.get("/approvals", requireApiKey, (req, res
