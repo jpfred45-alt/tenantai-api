@@ -1,9 +1,13 @@
+import path from "path";
+import { fileURLToPath } from "url";
 const express = require("express");
 const app = express();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT) || 8080;
 
 app.use(express.json());
-
+app.use("/admin", express.static(path.join(__dirname, "admin")));
 /* =========================
    HEALTH CHECK
 ========================= */
