@@ -1,8 +1,11 @@
 {
   "name": "tenantai-api",
   "version": "1.0.0",
-  "main": "index.js",
- "type": "module"
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": "18.x"
+  },
   "scripts": {
     "start": "node index.js"
   },
