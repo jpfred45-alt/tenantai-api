@@ -193,7 +193,21 @@ app.post("/approve/:approvalId", requireApiKey, (req, res) => {
     result
   });
 });
+/* =========================
+   COMMAND EXECUTION
+========================= */
 
+app.post("/command", requireApiKey, (req, res) => {
+  const { command } = req.body;
+
+  if (!command) {
+    return res.status(400).json({ error: "Command is required" });
+  }
+
+  const result = evaluateCommand(command);
+
+  res.json(result);
+});
 /* =========================
    SERVER START
 ========================= */
